@@ -8,6 +8,9 @@ import re
 import shlex
 import subprocess
 
+# Note that this code was leveraged from Github Prometheus node exporter. 
+# Changes have been made public on the IHI Git Hub repo
+
 device_info_re = re.compile(r'^(?P<k>[^:]+?)(?:(?:\sis|):)\s*(?P<v>.*)$')
 
 ata_error_count_re = re.compile(
@@ -26,45 +29,32 @@ device_info_map = {
     'Firmware Version': 'firmware_version',
 }
 
+# Advantech whitelist for 630 / 830 / 910 / 640 Series
+# TODO will eventually pull these out into hardware specific
+# files
+
 smart_attributes_whitelist = {
-    'airflow_temperature_cel',
-    'command_timeout',
-    'current_pending_sector',
-    'end_to_end_error',
-    'erase_fail_count_total',
-    'g_sense_error_rate',
-    'hardware_ecc_recovered',
-    'host_reads_mib',
-    'host_reads_32mib',
-    'host_writes_mib',
-    'host_writes_32mib',
-    'load_cycle_count',
-    'media_wearout_indicator',
-    'wear_leveling_count',
-    'nand_writes_1gib',
-    'offline_uncorrectable',
-    'power_cycle_count',
-    'power_on_hours',
-    'program_fail_count',
     'raw_read_error_rate',
-    'reallocated_event_count',
-    'reallocated_sector_ct',
-    'reported_uncorrect',
-    'sata_downshift_count',
-    'seek_error_rate',
-    'spin_retry_count',
-    'spin_up_time',
-    'start_stop_count',
-    'temperature_case',
+    'power_on_hours',
+    'power_cycle_cnt',
+    'device_capacity',
+    'user_capacity',
+    'initial_spare_blocks',
+    'spare_blocks_remaining',
+    'total_erase_cnt',
+    'sata_phy_error_cnt',
+    'bad_block_cnt',
+    'erase_cnt',
+    'powerloss_cnt',
+    'power-off_retract_count',
+    'power_failure_protection',
     'temperature_celsius',
-    'temperature_internal',
-    'total_lbas_read',
-    'total_lbas_written',
-    'udma_crc_error_count',
-    'unsafe_shutdown_count',
-    'workld_host_reads_perc',
-    'workld_media_wear_indic',
-    'workload_minutes',
+    'crc_error',
+    'life_remaining',
+    'total_nan_read',
+    'total_nan_written',
+    'total_host_written',
+    'total_host_read',
 }
 
 Metric = collections.namedtuple('Metric', 'name labels value')
@@ -117,7 +107,6 @@ def metric_print(metric, prefix=''):
 
 def smart_ctl(*args, check=True):
     """Wrapper around invoking the smartctl binary.
-
     Returns:
         (str) Data piped to stdout by the smartctl subprocess.
     """
@@ -134,7 +123,6 @@ def smart_ctl_version():
 
 def find_devices():
     """Find SMART devices.
-
     Yields:
         (Device) Single device found by smartctl.
     """
@@ -157,10 +145,8 @@ def find_devices():
 
 def device_is_active(device):
     """Returns whenever the given device is currently active or not.
-
     Args:
         device: (Device) Device in question.
-
     Returns:
         (bool) True if the device is active and False otherwise.
     """
@@ -174,13 +160,10 @@ def device_is_active(device):
 
 def device_info(device):
     """Query device for basic model information.
-
     Args:
         device: (Device) Device in question.
-
     Returns:
         (generator): Generator yielding:
-
             key (str): Key describing the value.
             value (str): Actual value.
     """
@@ -194,13 +177,10 @@ def device_info(device):
 
 def device_smart_capabilities(device):
     """Returns SMART capabilities of the given device.
-
     Args:
         device: (Device) Device in question.
-
     Returns:
         (tuple): tuple containing:
-
             (bool): True whenever SMART is available, False otherwise.
             (bool): True whenever SMART is enabled, False otherwise.
     """
@@ -218,10 +198,8 @@ def device_smart_capabilities(device):
 
 def collect_device_info(device):
     """Collect basic device information.
-
     Args:
         device: (Device) Device in question.
-
     Yields:
         (Metric) metrics describing general device information.
     """
@@ -234,10 +212,8 @@ def collect_device_info(device):
 
 def collect_device_health_self_assessment(device):
     """Collect metric about the device health self assessment.
-
     Args:
         device: (Device) Device in question.
-
     Yields:
         (Metric) Device health self assessment.
     """
@@ -292,7 +268,7 @@ def collect_ata_metrics(device):
                 **device.base_labels,
             }
 
-            for col in 'value', 'worst', 'threshold':
+            for col in 'value', 'worst', 'threshold', 'raw_value':
                 yield Metric(
                     'attr_{col}'.format(name=entry["name"], col=col),
                     labels, entry[col])
@@ -300,10 +276,8 @@ def collect_ata_metrics(device):
 
 def collect_ata_error_count(device):
     """Inspect the device error log and report the amount of entries.
-
     Args:
         device: (Device) Device in question.
-
     Yields:
         (Metric) Device error count.
     """
